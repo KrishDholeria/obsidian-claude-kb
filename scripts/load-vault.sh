@@ -17,10 +17,14 @@ PROJECT_VAULT_NAME="$PROJ_NAME"
 obsidian_running() { obsidian version &>/dev/null; }
 obsidian_knows_vault() { obsidian vaults 2>/dev/null | awk '{print $1}' | grep -qx "$1"; }
 
+# Detect which vault is currently active in Obsidian (vault= param is ignored by obsidian-cli)
+ACTIVE_VAULT=$(obsidian_running && obsidian vault info=name 2>/dev/null | tr -d '\n' || echo "")
+
 # P0-2 fix: use search query="tag:#claude-context" — tag verbose format=json does not output JSON
+# FIX: add </dev/null to prevent stdin consumption in loops
 collect_via_obsidian() {
   local vault_name="$1"
-  obsidian search query="tag:#claude-context" vault="$vault_name" format=json 2>/dev/null \
+  obsidian search query="tag:#claude-context" vault="$vault_name" format=json </dev/null 2>/dev/null \
     | python3 -c "
 import json, sys
 try:
@@ -32,10 +36,11 @@ except: pass
 }
 
 # P1-6 fix: add truncation marker when note exceeds 80 lines
+# FIX: add </dev/null to prevent stdin consumption in loops
 read_via_obsidian() {
   local vault_name="$1" path="$2"
   local content
-  content=$(obsidian read path="$path" vault="$vault_name" 2>/dev/null)
+  content=$(obsidian read path="$path" vault="$vault_name" </dev/null 2>/dev/null)
   local lines
   lines=$(echo "$content" | wc -l)
   if (( lines > 80 )); then
@@ -100,7 +105,8 @@ BUDGET_HIT=0
 load_vault() {
   local vault_name="$1" vault_path="$2"
 
-  if obsidian_running && obsidian_knows_vault "$vault_name"; then
+  # FIX: only use obsidian-cli for the active vault (vault= param is silently ignored)
+  if [ "$vault_name" = "$ACTIVE_VAULT" ]; then
     while IFS= read -r rel; do
       [ -z "$rel" ] && continue
       local content last_mod

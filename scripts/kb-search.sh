@@ -74,7 +74,10 @@ case "$VAULT_ARG" in
   Global) run_search "Global" "$GLOBAL_VAULT" ;;
   all)
     run_search "Global" "$GLOBAL_VAULT"
-    [ -d "$PROJECT_VAULT" ] && run_search "$PROJ_NAME" "$PROJECT_VAULT"
+    # FIX: use if-then instead of && to avoid exit code 1 when project vault doesn't exist
+    if [ -d "$PROJECT_VAULT" ]; then
+      run_search "$PROJ_NAME" "$PROJECT_VAULT"
+    fi
     ;;
   *)
     run_search "$VAULT_ARG" "$HOME/ObsidianVaults/$VAULT_ARG"

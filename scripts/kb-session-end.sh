@@ -13,15 +13,11 @@ obsidian_knows_vault() { obsidian vaults 2>/dev/null | awk '{print $1}' | grep -
 
 obsidian_running || exit 0
 
-# Prefer project vault, then Global, then Krish — first one that's registered wins
-TARGET_VAULT=""
-for v in "$PROJ_NAME" "Global" "Krish"; do
-  if obsidian_knows_vault "$v"; then
-    TARGET_VAULT="$v"
-    break
-  fi
-done
-[ -z "$TARGET_VAULT" ] && exit 0
+# FIX: detect the active vault — daily:append vault= param is silently ignored by obsidian-cli.
+# We always append to the active vault (no vault= arg), so just verify obsidian is running.
+ACTIVE_VAULT=$(obsidian vault info=name 2>/dev/null | tr -d '\n')
+[ -z "$ACTIVE_VAULT" ] && exit 0
+TARGET_VAULT="$ACTIVE_VAULT"
 
 # P2-4 fix: include git commit summary for richer session log
 # Include files written/edited this session (from kb-capture.sh PostToolUse hook)
@@ -55,9 +51,11 @@ $(sed 's/^/  - /' "$KB_LOG")"
   rm -f "$KB_LOG"
 fi
 
-# P1-3 fix: if daily:append fails for project vault, fall through to Krish
-if ! obsidian daily:append content="$ENTRY" vault="$TARGET_VAULT" &>/dev/null; then
-  if [ "$TARGET_VAULT" != "Krish" ] && obsidian_knows_vault "Krish"; then
-    obsidian daily:append content="$ENTRY" vault="Krish" &>/dev/null
-  fi
+# FIX: don't pass vault= — obsidian-cli silently ignores it and uses the active vault anyway.
+# Filesystem fallback writes to the active vault's daily notes directory.
+if ! obsidian daily:append content="$ENTRY" &>/dev/null; then
+  DAILY_DIR="$HOME/ObsidianVaults/$ACTIVE_VAULT/Daily Notes"
+  DAILY_FILE="$DAILY_DIR/$TODAY.md"
+  mkdir -p "$DAILY_DIR"
+  printf '%s\n' "$ENTRY" >> "$DAILY_FILE"
 fi

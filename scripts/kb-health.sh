@@ -65,18 +65,44 @@ check_vault() {
 
   echo ""
   echo "### Open KB Tasks"
+  # FIX: handle plain-string "No tasks found." response (not valid JSON)
   obsidian tasks todo vault="$vault_name" format=json 2>/dev/null \
     | python3 -c "
 import json, sys
-try:
-    tasks = json.load(sys.stdin)
-    for t in tasks[:10]:
-        print(f'  [{t[\"file\"]}:{t[\"line\"]}] {t[\"text\"].strip()}')
-    if not tasks:
-        print('  None')
-except:
-    print('  (error reading tasks)')
+raw = sys.stdin.read().strip()
+if not raw or raw == 'No tasks found.' or raw.startswith('No tasks'):
+    print('  None')
+else:
+    try:
+        tasks = json.loads(raw)
+        for t in tasks[:10]:
+            print(f'  [{t[\"file\"]}:{t[\"line\"]}] {t[\"text\"].strip()}')
+        if not tasks:
+            print('  None')
+    except:
+        print('  (error reading tasks)')
 " 2>/dev/null
+
+  echo ""
+  echo "### Unresolved Links"
+  # FIX: vault= is ignored by obsidian-cli; only run for the active vault
+  ACTIVE=$(obsidian vault info=name 2>/dev/null | tr -d '\n')
+  if [ "$vault_name" = "$ACTIVE" ]; then
+    UNRESOLVED=$(obsidian unresolved vault="$vault_name" 2>/dev/null | grep -c '\.md' || echo 0)
+    if [ "$UNRESOLVED" -gt 0 ]; then
+      echo "  $UNRESOLVED broken wikilinks found:"
+      obsidian unresolved vault="$vault_name" 2>/dev/null | head -20 | sed 's/^/  /'
+    else
+      echo "  No broken wikilinks."
+    fi
+  else
+    echo "  (skipped — $vault_name is not the active vault)"
+  fi
+
+  echo ""
+  echo "### Tag Inventory (top tags by usage)"
+  obsidian tags vault="$vault_name" sort=count format=tsv 2>/dev/null | head -15 | awk -F'\t' '{printf "  %-40s %s\n", $1, $2}' \
+    || echo "  (tag inventory not available)"
 
   echo ""
 }
