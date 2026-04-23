@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "obsidian-cli": {
+      "command": "npx",
+      "args": ["-y", "mcp-obsidian-cli"],
+      "env": {}
+    },
+    "obsidian-global-fs": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "OBSIDIAN_VAULTS_PATH/Global"],
+      "env": {}
+    }
+  }
+}
