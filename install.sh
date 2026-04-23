@@ -76,7 +76,24 @@ for script in load-vault.sh kb-save.sh kb-search.sh kb-outline.sh kb-session-end
 done
 echo ""
 
-# ── 4. Merge MCP servers into ~/.mcp.json ─────────────────────────────────────
+# ── 4. Install Claude slash commands ──────────────────────────────────────────
+COMMANDS_DIR="$HOME/.claude/commands"
+echo "Installing Claude commands to $COMMANDS_DIR..."
+mkdir -p "$COMMANDS_DIR"
+
+for cmd in kb-save.md kb-search.md kb-outline.md kb-health.md kb-init.md kb-daily.md kb-find.md; do
+  src="$REPO_DIR/commands/$cmd"
+  dst="$COMMANDS_DIR/$cmd"
+  if [ -f "$dst" ] && diff -q "$src" "$dst" &>/dev/null; then
+    ok "$cmd — already up to date"
+  else
+    cp "$src" "$dst"
+    ok "$cmd — installed (/$(basename $cmd .md))"
+  fi
+done
+echo ""
+
+# ── 5. Merge MCP servers into ~/.mcp.json ─────────────────────────────────────
 echo "Merging MCP servers into $GLOBAL_MCP..."
 
 if [ "$JQ_MISSING" = "1" ]; then

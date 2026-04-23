@@ -2,162 +2,122 @@
 
 A persistent second-brain for Claude Code, backed by Obsidian vaults.
 
-## One-liner install
+## Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/obsidian-claude-kb.git && bash obsidian-claude-kb/install.sh
+git clone https://github.com/KrishDholeria/obsidian-claude-kb.git && bash obsidian-claude-kb/install.sh
 ```
+
+Installs 7 scripts, 7 slash commands, MCP server config, and `SessionStart` / `SessionEnd` / `PostToolUse` hooks — all idempotent.
 
 ## What it does
 
-- **Auto-loads context** — a `SessionStart` hook injects notes tagged `#claude-context` from your Global vault (and active project vault) at the start of every Claude Code session, so Claude already knows your preferences, conventions, and project state.
-- **Persists knowledge** — Claude writes discoveries, decisions, and patterns back to your vault via `kb-save.sh`. Session activity is logged to Obsidian's daily note on `SessionEnd`.
-- **Works offline** — scripts have a filesystem fallback for when Obsidian isn't running; obsidian-cli is used as the primary path for semantic search and graph traversal.
+- **Auto-loads context** — `SessionStart` injects `#claude-context` tagged notes from your Global and project vault before every session
+- **Slash commands** — `/kb-save`, `/kb-search`, `/kb-outline`, `/kb-health`, `/kb-init`, `/kb-daily`, `/kb-find` available in every Claude Code session
+- **Passive capture** — `PostToolUse` tracks every file edited; `SessionEnd` logs the session summary to Obsidian's daily note
+- **obsidian-cli primary** — uses semantic `search:context`, `backlinks`, `outline`, `tag`, and `daily:append`; falls back to filesystem when Obsidian isn't running
 
 ## Prerequisites
 
-| Tool | Required | Purpose |
+| Tool | Required | Install |
 |------|----------|---------|
-| [Claude Code](https://claude.ai/code) | Yes | The CLI this extends |
-| [Node.js / npx](https://nodejs.org) | Yes | Runs MCP servers |
-| [jq](https://stedolan.github.io/jq/) | Yes | JSON config merging |
-| [Obsidian](https://obsidian.md) | Recommended | Vault UI, graph, search |
-| [obsidian-cli](https://github.com/oroce/obsidian-cli) | Recommended | Semantic search + daily notes |
+| [Claude Code](https://claude.ai/code) | Yes | — |
+| [Node.js / npx](https://nodejs.org) | Yes | `brew install node` / `apt install nodejs npm` |
+| [jq](https://stedolan.github.io/jq/) | Yes | `brew install jq` / `apt install jq` |
+| [Obsidian](https://obsidian.md) | Recommended | Download or `snap install obsidian --classic` |
+| [obsidian-cli](https://github.com/oroce/obsidian-cli) | Recommended | `npm install -g obsidian-cli` |
 
-Install on macOS: `brew install jq node` and `npm install -g obsidian-cli`
-Install on Linux: `sudo apt install jq nodejs npm` and `npm install -g obsidian-cli`
-
-## Post-install steps
-
-After running `install.sh`:
+## Post-install (manual steps)
 
 1. **Register the Global vault in Obsidian**
-   Open Obsidian → Manage vaults → "Open folder as vault"
-   Path: `~/ObsidianVaults/Global`
+   Open Obsidian → Manage vaults → "Open folder as vault" → `~/ObsidianVaults/Global`
 
-2. **Restart Claude Code** (or start a new session) to activate the `SessionStart` hook.
+2. **Restart Claude Code** to activate the SessionStart hook.
    You'll see: `Loading knowledge base context...`
 
-3. **Edit your always-load note** to add your real preferences:
+3. **Edit your always-load note** with your real preferences:
    `~/ObsidianVaults/Global/context/always-load.md`
 
-4. *(Optional)* Install Obsidian plugins: **Dataview** (for `_kb-index.base` queries) and **Tasks** (for open-task surfacing in `kb-health.sh`).
+4. *(Optional)* Install Obsidian plugins: **Dataview** (for `_kb-index.base`) and **Tasks** (for `kb-health` task listing)
 
-## Adding a new project
+## Slash commands
+
+| Command | What it does |
+|---------|-------------|
+| `/kb-save [vault] [category] [slug] [title] [tags] [content]` | Save a note — Claude infers values from context if not provided |
+| `/kb-search <query> [vault] [limit]` | Search vaults using `search:context` with surrounding line context |
+| `/kb-outline <vault> <path>` | Get heading tree of a note before reading it |
+| `/kb-health [vault]` | Orphans, dead-ends, stale notes, open tasks |
+| `/kb-init [project-name]` | Create a vault + `.mcp.json` for the current project |
+| `/kb-daily [note]` | Append a finding to today's daily note |
+| `/kb-find <tag\|category\|status> <value> [vault]` | Find notes by tag, category, or status |
+
+## Add a project vault
 
 Run inside any project directory:
+
+```bash
+/kb-init
+```
+
+Or directly:
 
 ```bash
 bash /path/to/obsidian-claude-kb/project-init.sh
 ```
 
-This creates `~/ObsidianVaults/<ProjectName>/` from the template, writes `.mcp.json` into the current directory, and prints registration instructions.
-
-Then register the new vault in Obsidian (same as step 1 above).
-
-## Using the scripts
-
-### Save a note
-
-```bash
-bash ~/.claude/scripts/kb-save.sh \
-  "<vault>" "<category>" "<slug>" "<title>" "<tags>" "<content>"
-
-# Examples:
-bash ~/.claude/scripts/kb-save.sh \
-  "Global" "patterns" "retry-with-backoff" \
-  "Exponential backoff retry pattern" \
-  "claude-context-conditional" \
-  "Always use exponential backoff with jitter for external API calls..."
-
-bash ~/.claude/scripts/kb-save.sh \
-  "MyProject" "decisions" "why-postgres-not-mongo" \
-  "Why PostgreSQL over MongoDB" \
-  "adr,claude-context-conditional" \
-  "Chose Postgres because of JSONB + relational joins needed for reporting..."
-```
-
-Vault names: `Global` or the basename of your project directory (e.g. `MyProject`).
-
-Categories for Global: `patterns`, `tools`, `conventions`, `context`, `explorations`
-Categories for projects: `architecture`, `decisions`, `runbooks`, `context`, `domain`, `integrations`, `sessions`, `explorations`
-
-### Search the vault
-
-```bash
-# Search everywhere
-bash ~/.claude/scripts/kb-search.sh "retry logic"
-
-# Search a specific vault
-bash ~/.claude/scripts/kb-search.sh "SQS queue" MyProject
-
-# Limit results
-bash ~/.claude/scripts/kb-search.sh "auth flow" Global 3
-```
-
-### Get a note's heading outline (before reading a large file)
-
-```bash
-bash ~/.claude/scripts/kb-outline.sh MyProject architecture/data-pipeline.md
-bash ~/.claude/scripts/kb-outline.sh Global conventions/kb-management.md
-```
-
-### Check vault health
-
-Surfaces orphaned notes, dead-ends, stale notes (last_modified > 60 days), and open tasks.
-
-```bash
-# Check all vaults
-bash ~/.claude/scripts/kb-health.sh
-
-# Check a specific vault
-bash ~/.claude/scripts/kb-health.sh MyProject
-bash ~/.claude/scripts/kb-health.sh Global
-```
-
-Requires Obsidian to be running (uses obsidian-cli for orphan/deadend detection).
+Then register the vault in Obsidian (same as step 1).
 
 ## Tag reference
 
-| Tag | Meaning |
-|-----|---------|
-| `claude-context` | Injected automatically every session |
-| `claude-context-conditional` | Available via search, not auto-injected |
+| Tag | Behaviour |
+|-----|-----------|
+| `claude-context` | Auto-injected every session |
+| `claude-context-conditional` | Available via `/kb-search`, not auto-injected |
 | `adr` | Architecture Decision Record |
-| `stale` | Do not inject; verify before trusting |
-| `draft` | Work in progress; not yet reliable |
+| `stale` | Never injected; verify before trusting |
+| `draft` | Not yet reliable |
 
 ## Vault layout
 
 ```
 ~/ObsidianVaults/
-  Global/                  # Loaded in every Claude Code session
-    context/               # always-load.md — your preferences
-    conventions/           # KB management rules, style guides
+  Global/                  # Every session
+    context/               # always-load.md — preferences, conventions
+    conventions/           # KB management rules
     patterns/              # Reusable architectural patterns
-    tools/                 # Tool configs, CLI references
+    tools/                 # Tool configs and CLI references
     explorations/          # Experiments and findings
-  <ProjectName>/           # Loaded when Claude Code opens that project
+  <ProjectName>/           # Active project session only
     architecture/          # System design, data flows
-    decisions/             # ADRs
+    decisions/             # ADRs (template-adr.md)
     runbooks/              # Step-by-step procedures
     context/               # always-load.md — project state
     domain/                # Business domain knowledge
     integrations/          # Third-party API specifics
-    sessions/              # Auto-written by kb-session-end.sh
-    explorations/          # Experiments specific to this project
+    sessions/              # Auto-written session logs
+    explorations/          # Project-specific experiments
+```
+
+## Repo layout
+
+```
+obsidian-claude-kb/
+  install.sh          # Idempotent installer (scripts + commands + MCP + hooks)
+  uninstall.sh        # Removes scripts and hooks; never touches vault notes
+  project-init.sh     # Init a vault for the current project
+  scripts/            # 7 bash scripts (called by hooks and commands)
+  commands/           # 7 Claude Code slash command definitions
+  templates/
+    global-vault/     # Starter notes for Global vault
+    project-vault/    # Starter notes for project vault ({{ProjectName}} substituted at init)
+  mcp/                # MCP server config templates
 ```
 
 ## Uninstall
-
-Removes scripts and hooks. Your vault notes are never touched.
 
 ```bash
 bash /path/to/obsidian-claude-kb/uninstall.sh
 ```
 
-## How it works
-
-1. **`SessionStart` hook** (`load-vault.sh`) — queries obsidian-cli for `#claude-context` notes in Global + project vault, respects a 24 000-character budget, truncates notes > 80 lines with a marker, and prints them as a fenced block Claude reads before the first user message.
-2. **`SessionEnd` hook** (`kb-session-end.sh`) — appends a timestamped entry to Obsidian's daily note listing the project, git commits from the last 4 hours, and any KB notes written during the session.
-3. **MCP servers** — `obsidian-cli` MCP enables Claude to do semantic `search:context`, `backlinks`, `outline`, `property:set`, and `daily:append` calls directly. The filesystem MCP (`obsidian-global-fs` / `obsidian-project-fs`) is the silent fallback.
+Removes scripts, commands, and hook entries. Vault notes are never deleted.
