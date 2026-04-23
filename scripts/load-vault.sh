@@ -46,14 +46,20 @@ read_via_obsidian() {
   fi
 }
 
-# P0-3 fix: match only YAML frontmatter tags, not body text; exclude conditional/stale/draft
+# Matches both YAML formats:
+#   block:  "  - claude-context"  (on its own line)
+#   inline: "tags: [claude-context]" or "tags: [claude-context, adr]"
 collect_via_filesystem() {
   local vault_path="$1"
-  grep -rl --include="*.md" -P '^\s*-\s*claude-context\s*$' "$vault_path" 2>/dev/null \
+  grep -rl --include="*.md" \
+    -P '(^\s*-\s*claude-context\s*$|tags:\s*\[([^\]]*,\s*)?claude-context(\s*,|\s*\]))' \
+    "$vault_path" 2>/dev/null \
     | while read -r f; do
-        grep -qP '^\s*-\s*claude-context-conditional' "$f" 2>/dev/null && continue
+        # Exclude conditional — both inline and block forms
+        grep -qP '(^\s*-\s*claude-context-conditional|tags:.*claude-context-conditional)' "$f" 2>/dev/null && continue
+        # Exclude stale/deprecated/draft
         grep -q 'status: stale\|status: deprecated\|status: draft' "$f" 2>/dev/null && continue
-        grep -qP '^\s*-\s*draft\s*$|^\s*-\s*stale\s*$' "$f" 2>/dev/null && continue
+        grep -qP '(^\s*-\s*(draft|stale)\s*$|tags:.*\b(draft|stale)\b)' "$f" 2>/dev/null && continue
         echo "$(stat -c %Y "$f" 2>/dev/null) $f"
       done \
     | sort -rn | awk '{print $2}'
