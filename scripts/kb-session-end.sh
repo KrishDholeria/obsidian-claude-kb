@@ -43,11 +43,22 @@ ENTRY="
 - Project: $PROJ_NAME
 - Session ended: $TIMESTAMP$FILES_SUMMARY$GIT_SUMMARY"
 
-# P1-2: report KB notes written (populated by kb-save.sh)
+# Report KB notes written as Obsidian wikilinks (format: "Vault/cat/slug.md|Title")
 if [ -f "$KB_LOG" ]; then
+  LINKS=""
+  while IFS='|' read -r note_path note_title; do
+    # Strip vault prefix and .md → [[category/slug|Title]]
+    rel="${note_path#*/}"       # remove "Global/" or "B2P/" prefix
+    slug="${rel%.md}"           # remove .md
+    if [ -n "$note_title" ]; then
+      LINKS+="  - [[${slug}|${note_title}]]"$'\n'
+    else
+      LINKS+="  - [[${slug}]]"$'\n'
+    fi
+  done < "$KB_LOG"
   ENTRY+="
 - KB notes written:
-$(sed 's/^/  - /' "$KB_LOG")"
+${LINKS%$'\n'}"
   rm -f "$KB_LOG"
 fi
 

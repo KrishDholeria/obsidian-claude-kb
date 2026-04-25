@@ -79,8 +79,8 @@ else
   echo "Created $VAULT/$REL_PATH via filesystem (Obsidian not running, vault not registered, or not active vault)"
 fi
 
-# P1-2 fix: write to KB log so kb-session-end.sh can report what was saved
-echo "$VAULT/$REL_PATH" >> "$KB_LOG"
+# Write to KB log: "VAULT/path.md|Title" so session-end can build wikilinks
+echo "$VAULT/$REL_PATH|$TITLE" >> "$KB_LOG"
 
 # IMPROVEMENT: find related notes and echo suggestions (does not modify the note)
 add_wikilinks() {
