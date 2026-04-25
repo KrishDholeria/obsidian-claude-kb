@@ -39,11 +39,15 @@ title: $TITLE
 category: $CATEGORY
 $TAGS_YAML
 last_modified: $TODAY
+session_created: $TODAY
 status: active
 references: []
 ---
 
-$CONTENT"
+$CONTENT
+
+---
+*Saved in session: [[${TODAY}]]*"
 
 obsidian_running() { obsidian version &>/dev/null; }
 obsidian_knows_vault() { obsidian vaults 2>/dev/null | awk '{print $1}' | grep -qx "$1"; }
@@ -59,7 +63,7 @@ if obsidian_running && obsidian_knows_vault "$VAULT" && [ "$VAULT" = "$ACTIVE_VA
     # P1-1 fix: update last_modified AND append new content section (not silently discard)
     obsidian property:set name="last_modified" value="$TODAY" path="$REL_PATH" vault="$VAULT" &>/dev/null
     # FIX Bug A: use $'\n' so newlines expand; FIX Bug B: use ${TODAY} not $TODAY_
-    UPDATE_SECTION=$'\n\n---\n'"_Updated ${TODAY}_"$'\n\n'"${CONTENT}"
+    UPDATE_SECTION=$'\n\n---\n'"_Updated [[${TODAY}]]_"$'\n\n'"${CONTENT}"
     if obsidian append path="$REL_PATH" vault="$VAULT" content="$UPDATE_SECTION" &>/dev/null; then
       echo "Updated $VAULT/$REL_PATH via obsidian-cli"
     else
