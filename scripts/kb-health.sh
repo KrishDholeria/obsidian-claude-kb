@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
 # KB health check: surfaces orphaned notes, stale entries, and open KB tasks.
 # Run manually: bash ~/.claude/scripts/kb-health.sh [vault]
-# Requires Obsidian to be running.
+# Filesystem checks run always; graph checks (orphans, tasks) require Obsidian.
 
 VAULT_ARG="${1:-all}"
 PROJ_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 PROJ_NAME=$(basename "$PROJ_DIR")
 
 obsidian_running() { obsidian version &>/dev/null; }
-obsidian_knows_vault() { obsidian vaults 2>/dev/null | awk '{print $1}' | grep -qx "$1"; }
-
-if ! obsidian_running; then
-  echo "Obsidian is not running. Start Obsidian to run KB health check."
-  exit 1
-fi
+OBSIDIAN_UP=0
+obsidian_running && OBSIDIAN_UP=1
 
 check_vault() {
   local vault_name="$1"
-  obsidian_knows_vault "$vault_name" || { echo "Vault '$vault_name' not registered in Obsidian."; return; }
+  local vault_path="$HOME/ObsidianVaults/$vault_name"
+  [ -d "$vault_path" ] || { echo "Vault '$vault_name' not found at $vault_path."; return; }
 
   echo "========================================"
   echo "  KB Health: $vault_name"
@@ -37,20 +34,28 @@ check_vault() {
 
   echo ""
   echo "### Orphaned Notes (no incoming links)"
-  orphans_out=$(obsidian orphans vault="$vault_name" 2>/dev/null)
-  if [ -n "$orphans_out" ]; then
-    echo "$orphans_out" | grep '\.md$' | grep -v '_index' | head -10 | sed 's/^/  - /'
+  if [ "$OBSIDIAN_UP" = "1" ]; then
+    orphans_out=$(obsidian orphans vault="$vault_name" 2>/dev/null)
+    if [ -n "$orphans_out" ]; then
+      echo "$orphans_out" | grep '\.md$' | grep -v '_index' | head -10 | sed 's/^/  - /'
+    else
+      echo "  None"
+    fi
   else
-    echo "  None"
+    echo "  (skipped — Obsidian not running)"
   fi
 
   echo ""
   echo "### Dead-end Notes (no outgoing links)"
-  deadends_out=$(obsidian deadends vault="$vault_name" 2>/dev/null)
-  if [ -n "$deadends_out" ]; then
-    echo "$deadends_out" | grep '\.md$' | grep -v '_index' | head -10 | sed 's/^/  - /'
+  if [ "$OBSIDIAN_UP" = "1" ]; then
+    deadends_out=$(obsidian deadends vault="$vault_name" 2>/dev/null)
+    if [ -n "$deadends_out" ]; then
+      echo "$deadends_out" | grep '\.md$' | grep -v '_index' | head -10 | sed 's/^/  - /'
+    else
+      echo "  None"
+    fi
   else
-    echo "  None"
+    echo "  (skipped — Obsidian not running)"
   fi
 
   echo ""
@@ -65,6 +70,9 @@ check_vault() {
 
   echo ""
   echo "### Open KB Tasks"
+  if [ "$OBSIDIAN_UP" != "1" ]; then
+    echo "  (skipped — Obsidian not running)"
+  else
   # FIX: handle plain-string "No tasks found." response (not valid JSON)
   obsidian tasks todo vault="$vault_name" format=json 2>/dev/null \
     | python3 -c "
@@ -82,12 +90,15 @@ else:
     except:
         print('  (error reading tasks)')
 " 2>/dev/null
+  fi
 
   echo ""
   echo "### Unresolved Links"
-  # FIX: vault= is ignored by obsidian-cli; only run for the active vault
-  ACTIVE=$(obsidian vault info=name 2>/dev/null | tr -d '\n')
-  if [ "$vault_name" = "$ACTIVE" ]; then
+  # vault= is ignored by obsidian-cli; only run for the active vault
+  ACTIVE=$([ "$OBSIDIAN_UP" = "1" ] && obsidian vault info=name 2>/dev/null | tr -d '\n' || echo "")
+  if [ "$OBSIDIAN_UP" != "1" ]; then
+    echo "  (skipped — Obsidian not running)"
+  elif [ "$vault_name" = "$ACTIVE" ]; then
     UNRESOLVED=$(obsidian unresolved vault="$vault_name" 2>/dev/null | grep -c '\.md' || echo 0)
     if [ "$UNRESOLVED" -gt 0 ]; then
       echo "  $UNRESOLVED broken wikilinks found:"
@@ -101,8 +112,16 @@ else:
 
   echo ""
   echo "### Tag Inventory (top tags by usage)"
-  obsidian tags vault="$vault_name" sort=count format=tsv 2>/dev/null | head -15 | awk -F'\t' '{printf "  %-40s %s\n", $1, $2}' \
-    || echo "  (tag inventory not available)"
+  if [ "$OBSIDIAN_UP" = "1" ]; then
+    obsidian tags vault="$vault_name" sort=count format=tsv 2>/dev/null | head -15 | awk -F'\t' '{printf "  %-40s %s\n", $1, $2}' \
+      || echo "  (tag inventory not available)"
+  else
+    # Filesystem fallback: count tag occurrences
+    grep -rh --include="*.md" -oP '(?<=tags:\s\[)[^\]]+' "$vault_path" 2>/dev/null \
+      | tr ',' '\n' | tr -d ' []' | sort | uniq -c | sort -rn | head -15 \
+      | awk '{printf "  %-40s %s\n", $2, $1}' \
+      || echo "  (tag inventory not available)"
+  fi
 
   echo ""
 }
