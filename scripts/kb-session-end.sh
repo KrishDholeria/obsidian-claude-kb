@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# SessionEnd hook: logs session summary to today's Obsidian daily note.
-# Uses daily:append via obsidian-cli; skips silently if Obsidian not running.
+# SessionEnd hook: logs session summary to today's daily note.
+# Writes to project vault if initialized, Global vault otherwise.
+# Works with or without Obsidian running (filesystem fallback always available).
 
 PROJ_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 PROJ_NAME=$(basename "$PROJ_DIR")
@@ -9,15 +10,24 @@ TODAY=$(date +"%Y-%m-%d")
 KB_LOG="/tmp/claude-kb-writes-$TODAY.log"
 
 obsidian_running() { obsidian version &>/dev/null; }
-obsidian_knows_vault() { obsidian vaults 2>/dev/null | awk '{print $1}' | grep -qx "$1"; }
 
-obsidian_running || exit 0
+# Target the project vault — session log always goes to the project's own vault, not Global.
+PROJECT_VAULT_PATH="$HOME/ObsidianVaults/$PROJ_NAME"
 
-# FIX: detect the active vault — daily:append vault= param is silently ignored by obsidian-cli.
-# We always append to the active vault (no vault= arg), so just verify obsidian is running.
-ACTIVE_VAULT=$(obsidian vault info=name 2>/dev/null | tr -d '\n')
-[ -z "$ACTIVE_VAULT" ] && exit 0
-TARGET_VAULT="$ACTIVE_VAULT"
+# Helper: write daily note to a vault path via filesystem.
+# Respects "Daily Notes/" subfolder if it exists, otherwise writes to vault root.
+write_daily_note() {
+  local vault_path="$1"
+  local content="$2"
+  local daily_dir
+  if [ -d "$vault_path/Daily Notes" ]; then
+    daily_dir="$vault_path/Daily Notes"
+  else
+    daily_dir="$vault_path"
+  fi
+  mkdir -p "$daily_dir"
+  printf '%s\n' "$content" >> "$daily_dir/$TODAY.md"
+}
 
 # P2-4 fix: include git commit summary for richer session log
 # Include files written/edited this session (from kb-capture.sh PostToolUse hook)
@@ -62,11 +72,23 @@ ${LINKS%$'\n'}"
   rm -f "$KB_LOG"
 fi
 
-# FIX: don't pass vault= — obsidian-cli silently ignores it and uses the active vault anyway.
-# Filesystem fallback writes to the active vault's daily notes directory.
-if ! obsidian daily:append content="$ENTRY" &>/dev/null; then
-  DAILY_DIR="$HOME/ObsidianVaults/$ACTIVE_VAULT/Daily Notes"
-  DAILY_FILE="$DAILY_DIR/$TODAY.md"
-  mkdir -p "$DAILY_DIR"
-  printf '%s\n' "$ENTRY" >> "$DAILY_FILE"
+# Write session log to project vault if initialized, otherwise fall back to Global.
+if [ -d "$PROJECT_VAULT_PATH" ]; then
+  # Project vault exists — use it.
+  # obsidian daily:append only works correctly for the active vault (vault= is ignored).
+  ACTIVE_VAULT=$(obsidian_running && obsidian vault info=name 2>/dev/null | tr -d '\n' || echo "")
+  if obsidian_running && [ "$ACTIVE_VAULT" = "$PROJ_NAME" ]; then
+    obsidian daily:append content="$ENTRY" &>/dev/null || write_daily_note "$PROJECT_VAULT_PATH" "$ENTRY"
+  else
+    write_daily_note "$PROJECT_VAULT_PATH" "$ENTRY"
+  fi
+else
+  # No project vault initialized — fall back to Global vault.
+  GLOBAL_VAULT_PATH="$HOME/ObsidianVaults/Global"
+  ACTIVE_VAULT=$(obsidian_running && obsidian vault info=name 2>/dev/null | tr -d '\n' || echo "")
+  if obsidian_running && [ "$ACTIVE_VAULT" = "Global" ]; then
+    obsidian daily:append content="$ENTRY" &>/dev/null || write_daily_note "$GLOBAL_VAULT_PATH" "$ENTRY"
+  else
+    write_daily_note "$GLOBAL_VAULT_PATH" "$ENTRY"
+  fi
 fi
